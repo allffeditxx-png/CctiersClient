@@ -1,0 +1,45 @@
+name: build
+
+on:
+  push:
+    paths:
+      - '**.zip'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Unzip the newest source zip
+        run: |
+          ZIP=$(git log -1 --name-only --diff-filter=AM --pretty=format: -- '*.zip' | grep -m1 '\.zip$' || true)
+          if [ -z "$ZIP" ]; then ZIP=$(find . -name '*.zip' -not -path './.git/*' | head -n 1); fi
+          echo "Building from: $ZIP"
+          mkdir -p /tmp/src
+          unzip -q -o "$ZIP" -d /tmp/src
+          ROOT=$(dirname "$(find /tmp/src -maxdepth 3 -name build.gradle | head -n 1)")
+          echo "Project root: $ROOT"
+          echo "SRC_ROOT=$ROOT" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.2.0"
+
+      - name: Build
+        run: gradle -p "$SRC_ROOT" build --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mod-jar
+          path: |
+            ${{ env.SRC_ROOT }}/build/libs/*.jar
+            !${{ env.SRC_ROOT }}/build/libs/*-sources.jar
